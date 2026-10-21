@@ -872,7 +872,7 @@ const SE = {
     tone(o, 'sine', 150, 36, ti, 0.004, 0.95, 0.95); tone(o, 'square', 80, 40, ti, 0.004, 0.25, 0.12);
     noise(o, ti, 0.002, 0.4, 0.7, 'lowpass', 3000, 250);
   } },
-  custom: { name: '自分の音', play(o, ti) {
+  custom: { name: 'アップロード音', play(o, ti) {
     if (!st.seBuf) return;
     const when = ti + st.seOffset, start = Math.max(when, actx.currentTime);
     const src = actx.createBufferSource(); src.buffer = st.seBuf;
