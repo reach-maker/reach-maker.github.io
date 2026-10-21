@@ -145,6 +145,7 @@ input[type=text], select {
 input[type=color] { width: 44px; height: 32px; border: 1px solid var(--line-strong); border-radius: 7px; background: #0b1411; padding: 2px; }
 .check { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
 .check input { accent-color: var(--gold); width: 16px; height: 16px; }
+.se-file { display: grid; gap: 10px; }
 .inline { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
 </style>
 </head>
@@ -220,6 +221,14 @@ input[type=color] { width: 44px; height: 32px; border: 1px solid var(--line-stro
       <section class="card">
         <h2>効果音</h2>
         <div class="chips" id="seChips"></div>
+        <div id="seFileRow" class="se-file" hidden>
+          <label class="drop" for="seInput">
+            <div><strong id="seFileName">効果音ファイルを選ぶ</strong><span>mp3 / wav / m4a。「立直」が出る瞬間に合わせて鳴り、動画にも入ります</span></div>
+          </label>
+          <input type="file" id="seInput" accept="audio/*">
+          <div class="row"><label for="seOffset">タイミング</label><input type="range" id="seOffset" min="-100" max="100" value="0"><output id="seOffsetOut">±0.00秒</output></div>
+          <p class="hint">マイナスにすると「立直」が出る前から鳴り始めます。</p>
+        </div>
         <div class="row"><label for="seVol">音量</label><input type="range" id="seVol" min="0" max="100" value="80"><output id="seVolOut">80</output></div>
       </section>
 
@@ -260,7 +269,7 @@ let curT = 0, offCv = null;
 
 const st = {
   aspect: '16:9', bg: 'niji', se: 'kyuin', luxe: true,
-  img: null, bgImg: null,
+  img: null, bgImg: null, seBuf: null, seName: '', seOffset: 0,
   accent: '#ff3cac', light: '#ffffff',
   text: '立直', sub: '', bandMode: 'main', bandText: '一発ツモ', font: 'dela', vertical: false, stick: true,
   scale: 1, posX: 0, posY: 0, flip: false, hold: 1.8,
@@ -863,13 +872,20 @@ const SE = {
     tone(o, 'sine', 150, 36, ti, 0.004, 0.95, 0.95); tone(o, 'square', 80, 40, ti, 0.004, 0.25, 0.12);
     noise(o, ti, 0.002, 0.4, 0.7, 'lowpass', 3000, 250);
   } },
+  custom: { name: '自分の音', play(o, ti) {
+    if (!st.seBuf) return;
+    const when = ti + st.seOffset, start = Math.max(when, actx.currentTime);
+    const src = actx.createBufferSource(); src.buffer = st.seBuf;
+    src.connect(o); src.start(start, start - when);
+  } },
   none: { name: 'なし', play() {} },
 };
 function scheduleAudio(t0) {
   if (playBus) { try { playBus.disconnect(); } catch (e) {} }
   playBus = actx.createGain(); playBus.connect(master);
   const se = actx.createGain(); se.gain.value = st.seVol; se.connect(playBus);
-  if (st.se !== 'none') {
+  if (st.se === 'custom') SE.custom.play(se, t0 + T_IMP);
+  else if (st.se !== 'none') {
     noise(se, t0 + 0.08, 0.18, 0.16, 0.22, 'bandpass', 300, 2600, 1.2); // whoosh as the character slides in
     SE[st.se].play(se, t0 + T_IMP);
     if (st.stick) { const tk = t0 + T_IMP + 0.35 + 0.17; tone(se, 'square', 2400, 0, tk, 0.001, 0.04, 0.06); tone(se, 'triangle', 1250, 0, tk, 0.001, 0.09, 0.12); }
@@ -985,7 +1001,20 @@ function chips(el, defs, key, onChange) {
     el.append(l);
   });
 }
-chips($('#seChips'), SE, 'se', previewSound);
+chips($('#seChips'), SE, 'se', () => {
+  $('#seFileRow').hidden = st.se !== 'custom';
+  if (st.se !== 'custom' || st.seBuf) previewSound();
+});
+$('#seInput').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  ensureAudio();
+  try {
+    st.seBuf = await actx.decodeAudioData(await f.arrayBuffer());
+    $('#seFileName').textContent = `${f.name}（${st.seBuf.duration.toFixed(1)}秒）`;
+    msg('効果音を読み込みました。▶ 再生で映像と合わせて確認できます。');
+    previewSound();
+  } catch (err) { msg('この音声ファイルは読み込めませんでした。mp3 か wav で試してください。', true); }
+});
 function previewSound() {
   ensureAudio(); actx.resume();
   const t0 = actx.currentTime + 0.05;
@@ -1000,6 +1029,7 @@ function bindRange(id, fmt, apply) {
 bindRange('scale', (v) => v + '%', (v) => (st.scale = v / 100));
 bindRange('posX', (v) => v, (v) => (st.posX = v));
 bindRange('posY', (v) => v, (v) => (st.posY = v));
+bindRange('seOffset', (v) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v / 100).toFixed(2) + '秒', (v) => (st.seOffset = v / 100));
 bindRange('seVol', (v) => v, (v) => (st.seVol = v / 100));
 bindRange('hold', (v) => (v / 10).toFixed(1) + '秒', (v) => (st.hold = v / 10));
 $('#luxe').addEventListener('change', (e) => { st.luxe = e.target.checked; drawStill(); });
