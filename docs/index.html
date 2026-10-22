@@ -236,6 +236,8 @@ input[type=color] { width: 44px; height: 32px; border: 1px solid var(--line-stro
         <h2>文字</h2>
         <div class="row"><label for="mainText">メイン</label><input type="text" id="mainText" value="立直" maxlength="8"><span></span></div>
         <div class="row"><label for="subText">サブ</label><input type="text" id="subText" value="" placeholder="例：東家" maxlength="24"><span></span></div>
+        <div class="row"><label for="mainSize">メインの大きさ</label><input type="range" id="mainSize" min="50" max="150" value="100"><output id="mainSizeOut">100%</output></div>
+        <div class="row"><label for="subSize">サブの大きさ</label><input type="range" id="subSize" min="50" max="200" value="100"><output id="subSizeOut">100%</output></div>
         <div class="row"><label for="font">書体</label>
           <select id="font">
             <option value="dela">極太ゴシック</option>
@@ -271,7 +273,7 @@ const st = {
   aspect: '16:9', bg: 'niji', se: 'kyuin', luxe: true,
   img: null, bgImg: null, seBuf: null, seName: '', seOffset: 0,
   accent: '#ff3cac', light: '#ffffff',
-  text: '立直', sub: '', bandMode: 'main', bandText: '一発ツモ', font: 'dela', vertical: false, stick: true,
+  text: '立直', sub: '', bandMode: 'main', bandText: '一発ツモ', mainSize: 1, subSize: 1, font: 'dela', vertical: false, stick: true,
   scale: 1, posX: 0, posY: 0, flip: false, hold: 1.8,
   seVol: 0.8,
 };
@@ -565,6 +567,7 @@ function layout(W, H) {
     fs = Math.min(200 * s, (portrait ? H * 0.42 : H * 0.7) / len);
     if (portrait) { tx = W * 0.2; ty = H * 0.3; } else { tx = W * 0.2; ty = H * 0.46; }
   } else fs = Math.min(240 * s, maxTW / (len * 1.02));
+  fs *= st.mainSize;
   const blockH = st.vertical ? fs * len * 1.02 : fs;
   return { s, portrait, tx, ty, chars, fs, blockH, maxTW,
     cx: cx + (st.posX / 100) * W * 0.5,
@@ -732,7 +735,7 @@ function render(c, t, W, H, opts = {}) {
   let below = textBottom + 26 * s;
   if (st.sub) {
     const sp = outCubic(clamp((t - imp - 0.18) / 0.3)), sq = inCubic(clamp((t - ex) / 0.25));
-    const fs = 34 * s;
+    const fs = 34 * s * st.subSize;
     c.font = SUBFONT(fs);
     const tw = c.measureText(st.sub).width, pw = tw + 48 * s, ph = fs * 1.6;
     const x = st.vertical ? L.tx + L.fs * 0.6 + 20 * s : L.tx - pw / 2;
@@ -1031,6 +1034,8 @@ bindRange('posX', (v) => v, (v) => (st.posX = v));
 bindRange('posY', (v) => v, (v) => (st.posY = v));
 bindRange('seOffset', (v) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v / 100).toFixed(2) + '秒', (v) => (st.seOffset = v / 100));
 bindRange('seVol', (v) => v, (v) => (st.seVol = v / 100));
+bindRange('mainSize', (v) => v + '%', (v) => (st.mainSize = v / 100));
+bindRange('subSize', (v) => v + '%', (v) => (st.subSize = v / 100));
 bindRange('hold', (v) => (v / 10).toFixed(1) + '秒', (v) => (st.hold = v / 10));
 $('#luxe').addEventListener('change', (e) => { st.luxe = e.target.checked; drawStill(); });
 $('#flip').addEventListener('change', (e) => { st.flip = e.target.checked; drawStill(); });
