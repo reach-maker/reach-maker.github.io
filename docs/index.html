@@ -72,6 +72,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; al
   display: grid; place-items: center;
   min-height: 200px;
 }
+#stage.alpha, .result video.alpha { background: repeating-conic-gradient(#3a3f3c 0 25%, #262a28 0 50%) 0 0 / 24px 24px; }
 #stage { display: block; max-width: 100%; max-height: 70vh; width: auto; height: auto; border-radius: 4px; }
 .stage-box.drag { outline: 2px dashed var(--gold); outline-offset: -6px; }
 .rec-badge {
@@ -170,6 +171,7 @@ input[type=color] { width: 44px; height: 32px; border: 1px solid var(--line-stro
         <button class="primary" id="playBtn" type="button">▶ 再生</button>
         <button class="rec" id="recBtn" type="button">● 動画を書き出す</button>
         <button id="pngBtn" type="button">静止画を保存</button>
+        <label class="check" for="transparent"><input type="checkbox" id="transparent"> 背景を透過（OBS向け WebM）</label>
         <span class="spacer"></span>
         <div class="seg" role="group" aria-label="画面比率" id="aspectSeg">
           <button type="button" data-aspect="16:9" aria-pressed="true">16:9</button>
@@ -273,7 +275,7 @@ const st = {
   aspect: '16:9', bg: 'niji', se: 'kyuin', luxe: true,
   img: null, bgImg: null, seBuf: null, seName: '', seOffset: 0,
   accent: '#ff3cac', light: '#ffffff',
-  text: '立直', sub: '', bandMode: 'main', bandText: '一発ツモ', mainSize: 1, subSize: 1, font: 'dela', vertical: false, stick: true,
+  text: '立直', sub: '', bandMode: 'main', bandText: '一発ツモ', mainSize: 1, subSize: 1, transparent: false, font: 'dela', vertical: false, stick: true,
   scale: 1, posX: 0, posY: 0, flip: false, hold: 1.8,
   seVol: 0.8,
 };
@@ -641,7 +643,8 @@ function render(c, t, W, H, opts = {}) {
   const L = layout(W, H), s = L.s, { ex, end } = timeline();
   const imp = T_IMP;
   c.save();
-  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const alpha = st.transparent && !opts.bgOnly;
+  if (alpha) c.clearRect(0, 0, W, H); else { c.fillStyle = '#000'; c.fillRect(0, 0, W, H); }
   // impact shake
   const sk = t > imp && t < imp + 0.38 ? 1 - (t - imp) / 0.38 : 0;
   if (sk > 0) { const f = Math.floor(t * 60); c.translate((rnd(f) - 0.5) * 34 * s * sk, (rnd(f + 99) - 0.5) * 34 * s * sk); }
@@ -653,7 +656,7 @@ function render(c, t, W, H, opts = {}) {
 
   // background, wiped in on a slant
   const wipe = outCubic(clamp(t / 0.32));
-  if (wipe > 0) {
+  if (wipe > 0 && !alpha) {
     c.save();
     const sl = H * 0.45, X = wipe * (W + sl * 2) - sl;
     c.beginPath(); c.moveTo(-sl - 60, -60); c.lineTo(X + sl, -60); c.lineTo(X - sl, H + 60); c.lineTo(-sl - 60, H + 60); c.closePath(); c.clip();
@@ -768,15 +771,29 @@ function render(c, t, W, H, opts = {}) {
   let fa = 0;
   if (t < 0.12) fa = 0.6 * (1 - t / 0.12);
   if (t >= imp && t < imp + 0.28) fa = Math.max(fa, 0.9 * (1 - (t - imp) / 0.28));
-  if (fa > 0) { c.fillStyle = `rgba(255,255,255,${fa})`; c.fillRect(-60, -60, W + 120, H + 120); }
-  if (pulse > 0) {
+  if (alpha) {
+    // 透過時は画面全体ではなく、文字のまわりだけを光らせる
+    const glow = (col, a) => {
+      const g = c.createRadialGradient(L.tx, L.ty, 0, L.tx, L.ty, Math.max(W, H) * 0.45);
+      g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0));
+      c.fillStyle = g; c.fillRect(-60, -60, W + 120, H + 120);
+    };
+    if (fa > 0) glow('rgba(255,255,255,A)', fa);
+    if (pulse > 0) glow(`hsla(${pulseHue},100%,60%,A)`, 0.45 * pulse);
+  } else if (fa > 0) { c.fillStyle = `rgba(255,255,255,${fa})`; c.fillRect(-60, -60, W + 120, H + 120); }
+  if (pulse > 0 && !alpha) {
     c.save(); c.globalCompositeOperation = 'lighter';
     c.fillStyle = `hsla(${pulseHue},100%,60%,${0.32 * pulse})`; c.fillRect(-60, -60, W + 120, H + 120);
     c.restore();
   }
   c.restore();
   const fo = clamp((t - (end - 0.22)) / 0.22);
-  if (fo > 0) { c.fillStyle = `rgba(0,0,0,${fo})`; c.fillRect(0, 0, W, H); }
+  if (fo > 0) {
+    c.save();
+    if (alpha) c.globalCompositeOperation = 'destination-out';
+    c.fillStyle = `rgba(0,0,0,${fo})`; c.fillRect(0, 0, W, H);
+    c.restore();
+  }
 }
 
 // ---------- audio ----------
@@ -847,17 +864,17 @@ function brass(o, t, freqs, len, peak) {
 const jara = (o, t, dur) => { for (let k = 0; k < 60; k++) noise(o, t + rnd(k + 200) * dur, 0.001, 0.025, 0.12, 'bandpass', 3500 + rnd(k + 300) * 3500, 0, 6); };
 const RENDA = [0, 0.13, 0.24, 0.33, 0.41, 0.48];
 const SE = {
-  kyuin: { name: 'キュインキュイン', beats: () => [0, 0.17, 0.34], play(o, ti) {
+  kyuin: { name: 'キュインキュイン', tail: 1.2, beats: () => [0, 0.17, 0.34], play(o, ti) {
     tone(o, 'sine', 140, 40, ti, 0.004, 0.7, 0.6);
     [0, 0.17, 0.34].forEach((b) => kyuin(o, ti + b));
   } },
-  gekiatsu: { name: '激アツ', beats: () => [...RENDA, 0.62], play(o, ti) {
+  gekiatsu: { name: '激アツ', tail: 1.1, beats: () => [...RENDA, 0.62], play(o, ti) {
     RENDA.forEach((b, i) => kyuin(o, ti - 0.5 + b, 420 + i * 70, 1800 + i * 260, 0.1, 0.13 + i * 0.015));
     tone(o, 'sine', 160, 36, ti, 0.004, 0.9, 0.9);
     noise(o, ti, 0.002, 0.35, 0.6, 'lowpass', 3000, 250);
     [0, 0.15, 0.3, 0.45].forEach((b) => kyuin(o, ti + 0.02 + b, 700, 3200, 0.14, 0.2));
   } },
-  kakutei: { name: '確定ファンファーレ', beats: () => [0, 0.17, 0.34, 0.6, 0.72, 0.84, 0.98], play(o, ti) {
+  kakutei: { name: '確定ファンファーレ', tail: 2.3, beats: () => [0, 0.17, 0.34, 0.6, 0.72, 0.84, 0.98], play(o, ti) {
     tone(o, 'sine', 140, 40, ti, 0.004, 0.7, 0.6);
     [0, 0.17, 0.34].forEach((b) => kyuin(o, ti + b));
     const C = [523, 659, 784], F = [587, 740, 880], G = [784, 988, 1175, 1568];
@@ -865,13 +882,13 @@ const SE = {
     brass(o, ti + 0.98, G, 1.1, 0.04);
     jara(o, ti + 1.0, 1.2);
   } },
-  gyuin: { name: 'ギュイーン', beats: () => [0, 0.2, 0.4], play(o, ti) {
+  gyuin: { name: 'ギュイーン', tail: 1.3, beats: () => [0, 0.2, 0.4], play(o, ti) {
     siren(o, ti - 0.55, 180, 3000, 0.55, 0.22);
     tone(o, 'sine', 160, 36, ti, 0.004, 0.9, 0.9);
     noise(o, ti, 0.002, 0.3, 0.5, 'lowpass', 3000, 250);
     [1568, 2093, 2637, 3136].forEach((f, i) => tone(o, 'sine', f, 0, ti + 0.05 + i * 0.07, 0.002, 0.9, 0.08));
   } },
-  impact: { name: '衝撃', play(o, ti) {
+  impact: { name: '衝撃', tail: 1.1, play(o, ti) {
     tone(o, 'sine', 150, 36, ti, 0.004, 0.95, 0.95); tone(o, 'square', 80, 40, ti, 0.004, 0.25, 0.12);
     noise(o, ti, 0.002, 0.4, 0.7, 'lowpass', 3000, 250);
   } },
@@ -898,12 +915,18 @@ function scheduleAudio(t0) {
 // ---------- playback / recording ----------
 let anim = 0, playing = false;
 function drawStill() { cancelAnimationFrame(anim); playing = false; render(ctx, heroT(), cv.width, cv.height); }
+// 映像が終わったあとも、効果音が鳴り終わるまで続ける（映像は黒／透過のまま）
+function soundEnd() {
+  if (st.se === 'custom') return st.seBuf ? T_IMP + st.seOffset + st.seBuf.duration : 0;
+  return T_IMP + (SE[st.se].tail || 0);
+}
+const playEnd = () => Math.max(timeline().end, soundEnd() + 0.1);
 function play(onDone) {
   ensureAudio(); actx.resume();
   cancelAnimationFrame(anim); playing = true;
   const t0 = actx.currentTime + 0.12;
   scheduleAudio(t0);
-  const { end } = timeline();
+  const end = playEnd();
   const tick = () => {
     const t = Math.max(0, actx.currentTime - t0);
     render(ctx, t, cv.width, cv.height);
@@ -921,8 +944,13 @@ function pickMime() {
   const list = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return list.find((m) => MediaRecorder.isTypeSupported(m)) || null;
 }
+function pickAlphaMime() {
+  if (!window.MediaRecorder) return null;
+  return ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus'].find((m) => MediaRecorder.isTypeSupported(m)) || null;
+}
 function record() {
-  const mime = pickMime();
+  const mime = st.transparent ? pickAlphaMime() : pickMime();
+  if (st.transparent && !mime) { msg('このブラウザは透過動画の書き出しに対応していません。Chrome か Edge で開いてください。', true); return; }
   if (!mime || !cv.captureStream) { msg('このブラウザでは動画の書き出しに対応していません。Chrome か Safari の新しい版で開いてください。', true); return; }
   ensureAudio(); actx.resume();
   const tracks = [...cv.captureStream(60).getVideoTracks()];
@@ -937,7 +965,10 @@ function record() {
     $('#result').hidden = false;
     $('#resultInfo').textContent = `${cv.width}×${cv.height} ・ ${lastExt.toUpperCase()} ・ ${(lastBlob.size / 1024 / 1024).toFixed(1)}MB`;
     setBusy(false);
-    msg('書き出しました。下のプレビューで確認して保存してください。');
+    v.classList.toggle('alpha', st.transparent);
+    msg(st.transparent
+      ? '透過WebMを書き出しました。OBSの「メディアソース」にそのまま入れられます。'
+      : '書き出しました。下のプレビューで確認して保存してください。');
     drawStill();
   };
   setBusy(true);
@@ -1038,6 +1069,11 @@ bindRange('mainSize', (v) => v + '%', (v) => (st.mainSize = v / 100));
 bindRange('subSize', (v) => v + '%', (v) => (st.subSize = v / 100));
 bindRange('hold', (v) => (v / 10).toFixed(1) + '秒', (v) => (st.hold = v / 10));
 $('#luxe').addEventListener('change', (e) => { st.luxe = e.target.checked; drawStill(); });
+$('#transparent').addEventListener('change', (e) => {
+  st.transparent = e.target.checked; cv.classList.toggle('alpha', st.transparent);
+  if (st.transparent && !pickAlphaMime()) msg('このブラウザでは透過動画を書き出せません。Chrome か Edge で開いてください。静止画は透過PNGで保存できます。', true);
+  drawStill();
+});
 $('#flip').addEventListener('change', (e) => { st.flip = e.target.checked; drawStill(); });
 $('#vertical').addEventListener('change', (e) => { st.vertical = e.target.checked; drawStill(); });
 $('#stick').addEventListener('change', (e) => { st.stick = e.target.checked; drawStill(); });
